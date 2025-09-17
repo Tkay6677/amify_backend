@@ -23,16 +23,24 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 
 // CORS configuration (must be before any routes/limiters that may respond)
-const allowedOrigins = [
+const envOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+const baseOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  'https://amify.vercel.app'
 ];
+const allowedOrigins = [...new Set([...baseOrigins, ...envOrigins])];
+const allowedOriginPatterns = [/\.vercel\.app$/];
+
 const corsOptions = {
   origin: function(origin, callback) {
-    // allow requests with no origin (e.g. mobile apps, curl)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (allowedOriginPatterns.some((re) => re.test(origin))) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -103,4 +111,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Amify API server running on port ${PORT}`);
   console.log(`📱 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
   console.log(`🗄️  Database: ${process.env.MONGODB_URI || 'mongodb://localhost:27017/amify'}`);
+  console.log(`🌐 Allowed Origins: ${allowedOrigins.join(', ')} (+ patterns: ${allowedOriginPatterns.map(r=>r.source).join(', ')})`);
 });
