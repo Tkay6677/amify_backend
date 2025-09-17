@@ -37,6 +37,16 @@ router.get('/', [
       filter.category = req.query.category;
     }
 
+    // Seller filter
+    if (req.query.seller) {
+      filter.seller = req.query.seller;
+    }
+
+    // Store filter
+    if (req.query.store) {
+      filter.store = req.query.store;
+    }
+
     // Price range filter
     if (req.query.minPrice || req.query.maxPrice) {
       filter.price = {};
@@ -52,11 +62,6 @@ router.get('/', [
     // Search filter
     if (req.query.search) {
       filter.$text = { $search: req.query.search };
-    }
-
-    // Seller filter
-    if (req.query.seller) {
-      filter.seller = req.query.seller;
     }
 
     // Build sort object
@@ -108,6 +113,42 @@ router.get('/', [
   }
 });
 
+// @desc    Link/unlink product to a store
+// @route   PATCH /api/products/:id/store
+// @access  Private (seller or admin)
+router.patch('/:id/store', protect, async (req, res) => {
+  try {
+    const { storeId } = req.body; // can be null to unlink
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    // Authorization: must be product owner or admin
+    if (product.seller.toString() !== req.user.id && req.user.type !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (storeId) {
+      const { default: Store } = await import('../models/Store.js');
+      const store = await Store.findById(storeId);
+      if (!store) return res.status(404).json({ message: 'Store not found' });
+      if (store.seller.toString() !== req.user.id && req.user.type !== 'admin') {
+        return res.status(403).json({ message: 'Cannot link to a store you do not own' });
+      }
+      product.store = storeId;
+    } else {
+      product.store = null;
+    }
+
+    await product.save();
+    await product.populate('seller', 'name businessName');
+
+    res.json({ success: true, data: product, message: storeId ? 'Product linked to store' : 'Product unlinked from store' });
+  } catch (error) {
+    console.error('Link product to store error:', error);
+    res.status(500).json({ message: 'Server error updating product store' });
+  }
+});
+
 // @desc    Get single product
 // @route   GET /api/products/:id
 // @access  Public
@@ -132,53 +173,6 @@ router.get('/:id', optionalAuth, async (req, res) => {
   } catch (error) {
     console.error('Get product error:', error);
     res.status(500).json({ message: 'Server error fetching product' });
-  }
-});
-
-// @desc    Create new product
-// @route   POST /api/products
-// @access  Private (Sellers only)
-router.post('/', protect, restrictTo('seller', 'admin'), [
-  body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Name must be between 2 and 100 characters'),
-  body('description').trim().isLength({ min: 10, max: 2000 }).withMessage('Description must be between 10 and 2000 characters'),
-  body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number'),
-  body('category').isIn(['Electronics', 'Fashion', 'Beauty', 'Home', 'Sports', 'Books', 'Health', 'Automotive', 'Other']).withMessage('Invalid category'),
-  body('inventory.quantity').isInt({ min: 0 }).withMessage('Quantity must be a non-negative integer')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        message: 'Validation failed', 
-        errors: errors.array() 
-      });
-    }
-
-    const productData = {
-      ...req.body,
-      seller: req.user.id
-    };
-
-    // Generate SKU if not provided
-    if (!productData.inventory.sku) {
-      const count = await Product.countDocuments({ seller: req.user.id });
-      productData.inventory.sku = `${req.user.id.toString().slice(-6)}-${(count + 1).toString().padStart(4, '0')}`;
-    }
-
-    const product = await Product.create(productData);
-    await product.populate('seller', 'name businessName');
-
-    res.status(201).json({
-      success: true,
-      message: 'Product created successfully',
-      data: product
-    });
-  } catch (error) {
-    console.error('Create product error:', error);
-    if (error.code === 11000) {
-      return res.status(400).json({ message: 'SKU already exists' });
-    }
-    res.status(500).json({ message: 'Server error creating product' });
   }
 });
 

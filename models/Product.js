@@ -71,6 +71,11 @@ const productSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'Seller is required']
   },
+  store: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Store',
+    default: null
+  },
   rating: {
     average: {
       type: Number,
@@ -162,6 +167,7 @@ const productSchema = new mongoose.Schema({
 productSchema.index({ name: 'text', description: 'text', tags: 'text' });
 productSchema.index({ category: 1, subcategory: 1 });
 productSchema.index({ seller: 1 });
+productSchema.index({ store: 1 });
 productSchema.index({ 'rating.average': -1 });
 productSchema.index({ price: 1 });
 productSchema.index({ createdAt: -1 });

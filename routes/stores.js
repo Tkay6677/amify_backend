@@ -60,7 +60,7 @@ router.get('/:id', protect, restrictTo('seller', 'admin'), async (req, res) => {
 router.post('/', protect, restrictTo('seller'), async (req, res) => {
   try {
 
-    const { name, slug, description, template, components, styles, settings } = req.body;
+    const { name, slug, description, template, components, styles, settings, pages } = req.body;
 
     // Check if store name already exists for this seller
     const existingStore = await Store.findOne({ 
@@ -95,7 +95,8 @@ router.post('/', protect, restrictTo('seller'), async (req, res) => {
       template,
       components: components || [],
       styles: styles || {},
-      settings: settings || {}
+      settings: settings || {},
+      pages: Array.isArray(pages) && pages.length > 0 ? pages : [{ slug: 'home', name: 'Home' }]
     });
 
     await store.save();
@@ -143,7 +144,7 @@ router.put('/:id', protect, restrictTo('seller'), async (req, res) => {
       });
     }
 
-    const { name, description, template, components, styles, settings } = req.body;
+    const { name, description, template, components, styles, settings, pages } = req.body;
 
     // Update fields if provided
     if (name !== undefined) store.name = name.trim();
@@ -152,6 +153,7 @@ router.put('/:id', protect, restrictTo('seller'), async (req, res) => {
     if (components !== undefined) store.components = components;
     if (styles !== undefined) store.styles = { ...store.styles.toObject(), ...styles };
     if (settings !== undefined) store.settings = { ...store.settings.toObject(), ...settings };
+    if (pages !== undefined && Array.isArray(pages)) store.pages = pages;
 
     // Increment version
     store.version += 1;

@@ -46,6 +46,11 @@ const storeStyleSchema = new mongoose.Schema({
   shadows: { type: Boolean, default: true }
 });
 
+const pageSchema = new mongoose.Schema({
+  slug: { type: String, required: true, lowercase: true, trim: true, match: /^[a-z0-9-]+$/ },
+  name: { type: String, required: true, trim: true, maxlength: 60 }
+}, { _id: false });
+
 const storeSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -77,7 +82,7 @@ const storeSchema = new mongoose.Schema({
   },
   components: [componentSchema],
   styles: {
-    type: storeStyleSchema,
+    type: mongoose.Schema.Types.Mixed,
     default: () => ({})
   },
   settings: {
@@ -134,6 +139,10 @@ const storeSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  pages: {
+    type: [pageSchema],
+    default: () => ([{ slug: 'home', name: 'Home' }])
   }
 }, {
   timestamps: true,
@@ -222,12 +231,13 @@ storeSchema.methods.duplicate = function(newName) {
       position: { ...comp.position },
       order: comp.order
     })),
-    styles: { ...this.styles.toObject() },
+    styles: { ...(this.styles?.toObject ? this.styles.toObject() : this.styles || {}) },
     settings: {
       ...this.settings.toObject(),
       isPublished: false,
       customDomain: undefined
-    }
+    },
+    pages: Array.isArray(this.pages) ? this.pages.map(p => ({ slug: p.slug, name: p.name })) : [{ slug: 'home', name: 'Home' }]
   });
   
   return duplicatedStore.save();
