@@ -38,7 +38,18 @@ const userSchema = new mongoose.Schema({
       type: String,
       default: 'Nigeria'
     },
-    zipCode: String
+    zipCode: String,
+    coordinates: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point'
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        index: '2dsphere'
+      }
+    }
   },
   avatar: {
     type: String,
@@ -91,6 +102,7 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ email: 1 });
 userSchema.index({ type: 1 });
 userSchema.index({ 'rating.average': -1 });
+userSchema.index({ 'address.coordinates.coordinates': '2dsphere' }); // Geospatial index for location queries
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {

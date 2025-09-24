@@ -142,13 +142,17 @@ orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ 'paymentInfo.status': 1 });
 
-// Generate order number
-orderSchema.pre('save', async function(next) {
-  if (this.isNew && !this.orderNumber) {
-    const count = await this.constructor.countDocuments();
-    this.orderNumber = `AMF${Date.now().toString().slice(-6)}${(count + 1).toString().padStart(4, '0')}`;
+// Generate order number before validation
+orderSchema.pre('validate', async function(next) {
+  try {
+    if (this.isNew && !this.orderNumber) {
+      const count = await this.constructor.countDocuments();
+      this.orderNumber = `AMF${Date.now().toString().slice(-6)}${(count + 1).toString().padStart(4, '0')}`;
+    }
+    next();
+  } catch (e) {
+    next(e);
   }
-  next();
 });
 
 // Method to add timeline entry

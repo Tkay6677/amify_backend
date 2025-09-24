@@ -17,9 +17,19 @@ const sampleUsers = [
     password: 'password123',
     type: 'seller',
     businessName: 'TechStore Pro',
-    businessAddress: '123 Tech Street, Silicon Valley, CA 94000',
     phone: '+15550101',
-    isVerified: true
+    isVerified: true,
+    address: {
+      street: '123 Tech Street',
+      city: 'Silicon Valley',
+      state: 'CA',
+      country: 'Nigeria',
+      zipCode: '94000',
+      coordinates: {
+        type: 'Point',
+        coordinates: [7.0219, 4.8156] // Lagos, Nigeria coordinates [longitude, latitude]
+      }
+    }
   },
   {
     name: 'Mike Chen',
@@ -27,9 +37,19 @@ const sampleUsers = [
     password: 'password123',
     type: 'seller',
     businessName: 'Fashion Hub',
-    businessAddress: '456 Fashion Ave, New York, NY 10001',
     phone: '+15550102',
-    isVerified: true
+    isVerified: true,
+    address: {
+      street: '456 Fashion Ave',
+      city: 'Abuja',
+      state: 'FCT',
+      country: 'Nigeria',
+      zipCode: '10001',
+      coordinates: {
+        type: 'Point',
+        coordinates: [7.4951, 9.0765] // Abuja, Nigeria coordinates [longitude, latitude]
+      }
+    }
   },
   {
     name: 'Emma Rodriguez',
@@ -37,9 +57,19 @@ const sampleUsers = [
     password: 'password123',
     type: 'seller',
     businessName: 'Organic Foods Co',
-    businessAddress: '789 Green Lane, Portland, OR 97201',
     phone: '+15550103',
-    isVerified: true
+    isVerified: true,
+    address: {
+      street: '789 Green Lane',
+      city: 'Port Harcourt',
+      state: 'Rivers',
+      country: 'Nigeria',
+      zipCode: '97201',
+      coordinates: {
+        type: 'Point',
+        coordinates: [7.0134, 4.8156] // Port Harcourt, Nigeria coordinates [longitude, latitude]
+      }
+    }
   },
   {
     name: 'David Kim',
@@ -47,9 +77,19 @@ const sampleUsers = [
     password: 'password123',
     type: 'seller',
     businessName: 'Home & Garden Plus',
-    businessAddress: '321 Home Street, Austin, TX 78701',
     phone: '+15550104',
-    isVerified: true
+    isVerified: true,
+    address: {
+      street: '321 Home Street',
+      city: 'Kano',
+      state: 'Kano',
+      country: 'Nigeria',
+      zipCode: '78701',
+      coordinates: {
+        type: 'Point',
+        coordinates: [8.5264, 12.0022] // Kano, Nigeria coordinates [longitude, latitude]
+      }
+    }
   },
   // Buyers
   {
@@ -57,16 +97,36 @@ const sampleUsers = [
     email: 'john@example.com',
     password: 'password123',
     type: 'buyer',
-    address: '123 Main St, Anytown, USA 12345',
-    phone: '+15550201'
+    phone: '+15550201',
+    address: {
+      street: '123 Main St',
+      city: 'Lagos',
+      state: 'Lagos',
+      country: 'Nigeria',
+      zipCode: '12345',
+      coordinates: {
+        type: 'Point',
+        coordinates: [3.3792, 6.5244] // Lagos, Nigeria coordinates [longitude, latitude]
+      }
+    }
   },
   {
     name: 'Lisa Wilson',
     email: 'lisa@example.com',
     password: 'password123',
     type: 'buyer',
-    address: '456 Oak Ave, Somewhere, USA 67890',
-    phone: '+15550202'
+    phone: '+15550202',
+    address: {
+      street: '456 Oak Ave',
+      city: 'Abuja',
+      state: 'FCT',
+      country: 'Nigeria',
+      zipCode: '67890',
+      coordinates: {
+        type: 'Point',
+        coordinates: [7.4951, 9.0765] // Abuja, Nigeria coordinates [longitude, latitude]
+      }
+    }
   },
   // Admin
   {
@@ -74,7 +134,18 @@ const sampleUsers = [
     email: 'admin@amify.com',
     password: 'admin123',
     type: 'admin',
-    isVerified: true
+    isVerified: true,
+    address: {
+      street: 'Admin Office',
+      city: 'Lagos',
+      state: 'Lagos',
+      country: 'Nigeria',
+      zipCode: '00000',
+      coordinates: {
+        type: 'Point',
+        coordinates: [3.3792, 6.5244] // Lagos, Nigeria coordinates [longitude, latitude]
+      }
+    }
   }
 ];
 

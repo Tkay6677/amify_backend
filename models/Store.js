@@ -115,6 +115,64 @@ const storeSchema = new mongoose.Schema({
       instagram: String,
       twitter: String,
       linkedin: String
+    },
+    contact: {
+      email: String,
+      phone: String,
+      address: String,
+      socialLinks: {
+        facebook: String,
+        instagram: String,
+        twitter: String,
+        whatsapp: String
+      }
+    },
+    shipping: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      freeShippingThreshold: Number,
+      zones: [{
+        id: String,
+        name: String,
+        states: [String],
+        cost: Number,
+        estimatedDays: String,
+        deliveryType: {
+          type: String,
+          enum: ['state-based', 'radius-based'],
+          default: 'state-based'
+        },
+        location: {
+          latitude: Number,
+          longitude: Number,
+          address: String
+        },
+        radius: Number, // in kilometers
+        isActive: {
+          type: Boolean,
+          default: true
+        }
+      }]
+    },
+    payments: {
+      paystack: {
+        type: Boolean,
+        default: false
+      },
+      flutterwave: {
+        type: Boolean,
+        default: false
+      },
+      bankTransfer: {
+        type: Boolean,
+        default: true
+      },
+      cashOnDelivery: {
+        type: Boolean,
+        default: true
+      }
     }
   },
   performance: {

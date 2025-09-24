@@ -55,6 +55,32 @@ router.post('/register', [
       }
       userData.businessName = businessName;
       userData.businessDescription = businessDescription;
+      
+      // Handle location coordinates
+      const { latitude, longitude, address } = req.body;
+      if (latitude && longitude) {
+        // Use provided coordinates
+        userData.address = {
+          country: 'Nigeria',
+          coordinates: {
+            type: 'Point',
+            coordinates: [longitude, latitude] // GeoJSON format: [lng, lat]
+          }
+        };
+        if (address) {
+          userData.addressText = address;
+        }
+      } else {
+        // Add default address structure for sellers to avoid GeoJSON errors
+        // This will be updated later when the seller provides their actual location
+        userData.address = {
+          country: 'Nigeria',
+          coordinates: {
+            type: 'Point',
+            coordinates: [7.0, 9.0] // Default coordinates for Nigeria (longitude, latitude)
+          }
+        };
+      }
     }
 
     // Create user

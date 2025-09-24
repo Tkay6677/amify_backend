@@ -379,4 +379,187 @@ router.get('/:id/analytics', protect, restrictTo('seller'), async (req, res) => 
   }
 });
 
+// Update delivery zones for a store
+router.patch('/:id/delivery-zones', protect, restrictTo('seller'), async (req, res) => {
+  try {
+    const { zones } = req.body;
+    
+    const store = await Store.findById(req.params.id);
+    
+    if (!store) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Store not found' 
+      });
+    }
+
+    // Check if user owns the store
+    if (store.seller.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied' 
+      });
+    }
+
+    // Validate zones data
+    if (!Array.isArray(zones)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Zones must be an array'
+      });
+    }
+
+    // Validate each zone
+    for (const zone of zones) {
+      if (!zone.name || !zone.cost || !zone.estimatedDays) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each zone must have name, cost, and estimatedDays'
+        });
+      }
+
+      if (zone.deliveryType === 'radius-based') {
+        if (!zone.location || !zone.radius) {
+          return res.status(400).json({
+            success: false,
+            message: 'Radius-based zones must have location and radius'
+          });
+        }
+      } else if (zone.deliveryType === 'state-based') {
+        if (!zone.states || !Array.isArray(zone.states) || zone.states.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'State-based zones must have at least one state'
+          });
+        }
+      }
+    }
+
+    // Update shipping zones
+    if (!store.settings.shipping) {
+      store.settings.shipping = { enabled: true, zones: [] };
+    }
+    
+    store.settings.shipping.zones = zones;
+    store.version += 1;
+
+    await store.save();
+
+    res.json({
+      success: true,
+      data: store.settings.shipping.zones,
+      message: 'Delivery zones updated successfully'
+    });
+  } catch (error) {
+    console.error('Update delivery zones error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update delivery zones' 
+    });
+  }
+});
+
+// Get delivery zones for a store
+router.get('/:id/delivery-zones', async (req, res) => {
+  try {
+    const store = await Store.findById(req.params.id).select('settings.shipping');
+    
+    if (!store) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Store not found' 
+      });
+    }
+
+    const zones = store.settings?.shipping?.zones || [];
+
+    res.json({
+      success: true,
+      data: zones
+    });
+  } catch (error) {
+    console.error('Get delivery zones error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch delivery zones' 
+    });
+  }
+});
+
+// Validate delivery for a location
+router.post('/:id/validate-delivery', async (req, res) => {
+  try {
+    const { location, state } = req.body;
+    
+    const store = await Store.findById(req.params.id).select('settings.shipping');
+    
+    if (!store) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Store not found' 
+      });
+    }
+
+    const zones = store.settings?.shipping?.zones || [];
+    const activeZones = zones.filter(zone => zone.isActive !== false);
+
+    let availableZones = [];
+
+    for (const zone of activeZones) {
+      if (zone.deliveryType === 'state-based' && state) {
+        if (zone.states.includes(state)) {
+          availableZones.push(zone);
+        }
+      } else if (zone.deliveryType === 'radius-based' && location) {
+        // Calculate distance using Haversine formula
+        const distance = calculateDistance(
+          location.latitude,
+          location.longitude,
+          zone.location.latitude,
+          zone.location.longitude
+        );
+        
+        if (distance <= zone.radius) {
+          availableZones.push({
+            ...zone,
+            distance: Math.round(distance * 100) / 100 // Round to 2 decimal places
+          });
+        }
+      }
+    }
+
+    // Sort by cost (cheapest first)
+    availableZones.sort((a, b) => a.cost - b.cost);
+
+    res.json({
+      success: true,
+      data: {
+        available: availableZones.length > 0,
+        zones: availableZones,
+        cheapestOption: availableZones[0] || null
+      }
+    });
+  } catch (error) {
+    console.error('Validate delivery error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to validate delivery' 
+    });
+  }
+});
+
+// Helper function to calculate distance between two coordinates
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of the Earth in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distance = R * c; // Distance in kilometers
+  return distance;
+}
+
 export default router;
