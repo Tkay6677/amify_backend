@@ -47,7 +47,8 @@ async function setupTestStore() {
           shipping: {
             enabled: true,
             zones: []
-          }
+          },
+          isPublished: true
         },
         isPublished: true,
         version: 1

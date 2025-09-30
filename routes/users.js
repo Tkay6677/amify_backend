@@ -48,6 +48,151 @@ router.get('/', protect, restrictTo('admin'), async (req, res) => {
   }
 });
 
+// @desc    Get seller dashboard stats
+// @route   GET /api/users/seller/stats
+// @access  Private/Seller
+router.get('/seller/stats', protect, restrictTo('seller', 'admin'), async (req, res) => {
+  try {
+    const sellerId = req.user.id;
+
+    // Get seller location
+    const seller = await User.findById(sellerId).select('address');
+    const sellerLocation = seller?.address?.coordinates?.coordinates;
+
+    // Get product stats
+    const productStats = await Product.aggregate([
+      { $match: { seller: sellerId } },
+      {
+        $group: {
+          _id: null,
+          totalProducts: { $sum: 1 },
+          activeProducts: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
+          totalViews: { $sum: '$views' },
+          averageRating: { $avg: '$rating.average' }
+        }
+      }
+    ]);
+
+    // Get order stats
+    const orderStats = await Order.aggregate([
+      { $match: { 'items.seller': sellerId } },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: '$total' },
+          pendingOrders: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+          completedOrders: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } }
+        }
+      }
+    ]);
+
+    // Get recent orders
+    const recentOrders = await Order.find({ 'items.seller': sellerId })
+      .populate('buyer', 'name email')
+      .populate('items.product', 'name images')
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Get nearby buyers (if seller has location)
+    let nearbyBuyers = [];
+    if (sellerLocation) {
+      nearbyBuyers = await User.find({
+        type: 'buyer',
+        'address.coordinates': {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: sellerLocation
+            },
+            $maxDistance: 10000 // 10km radius
+          }
+        }
+      }).limit(10).select('name location');
+    }
+
+    res.json({
+      success: true,
+      data: {
+        products: productStats[0] || { totalProducts: 0, activeProducts: 0, totalViews: 0, averageRating: 0 },
+        orders: orderStats[0] || { totalOrders: 0, totalRevenue: 0, pendingOrders: 0, completedOrders: 0 },
+        recentOrders,
+        nearbyBuyers
+      }
+    });
+  } catch (error) {
+    console.error('Get seller stats error:', error);
+    res.status(500).json({ message: 'Server error fetching seller stats' });
+  }
+});
+
+// @desc    Get top sellers
+// @route   GET /api/users/sellers/top
+// @access  Public
+router.get('/sellers/top', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const topSellers = await User.find({ type: 'seller', isActive: true })
+      .select('name businessName profilePicture rating location')
+      .sort({ 'rating.average': -1, 'rating.count': -1 })
+      .limit(limit);
+
+    res.json({
+      success: true,
+      data: topSellers
+    });
+  } catch (error) {
+    console.error('Get top sellers error:', error);
+    res.status(500).json({ message: 'Server error fetching top sellers' });
+  }
+});
+
+// @desc    Get public seller profile
+// @route   GET /api/users/sellers/:id/profile
+// @access  Public
+router.get('/sellers/:id/profile', async (req, res) => {
+  try {
+    const seller = await User.findById(req.params.id).select('-password -email');
+    
+    if (!seller) {
+      return res.status(404).json({ message: 'Seller not found' });
+    }
+
+    // Only allow viewing seller profiles
+    if (seller.type !== 'seller') {
+      return res.status(404).json({ message: 'Seller not found' });
+    }
+
+    // Get seller's product count and stats
+    const productCount = await Product.countDocuments({ seller: seller._id, status: 'active' });
+    const totalOrders = await Order.countDocuments({ 'items.seller': seller._id });
+    
+    // Get seller's recent products
+    const recentProducts = await Product.find({ seller: seller._id, status: 'active' })
+      .select('name images price rating')
+      .sort({ createdAt: -1 })
+      .limit(6);
+
+    res.json({
+      success: true,
+      data: {
+        seller: {
+          ...seller.toObject(),
+          stats: {
+            productCount,
+            totalOrders
+          }
+        },
+        recentProducts
+      }
+    });
+  } catch (error) {
+    console.error('Get seller profile error:', error);
+    res.status(500).json({ message: 'Server error fetching seller profile' });
+  }
+});
+
 // @desc    Get user profile
 // @route   GET /api/users/:id
 // @access  Private
@@ -138,204 +283,6 @@ router.delete('/:id', protect, restrictTo('admin'), async (req, res) => {
   } catch (error) {
     console.error('Delete user error:', error);
     res.status(500).json({ message: 'Server error deleting user' });
-  }
-});
-
-// @desc    Get seller dashboard stats
-// @route   GET /api/users/seller/stats
-// @access  Private/Seller
-router.get('/seller/stats', protect, restrictTo('seller', 'admin'), async (req, res) => {
-  try {
-    const sellerId = req.user.id;
-
-    // Get seller location
-    const seller = await User.findById(sellerId).select('address');
-    const sellerLocation = seller?.address?.coordinates?.coordinates;
-
-    // Get product stats
-    const productStats = await Product.aggregate([
-      { $match: { seller: sellerId } },
-      {
-        $group: {
-          _id: null,
-          totalProducts: { $sum: 1 },
-          activeProducts: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
-          totalViews: { $sum: '$views' },
-          totalSales: { $sum: '$totalSales' }
-        }
-      }
-    ]);
-
-    // Get order stats
-    const orderStats = await Order.aggregate([
-      { $match: { 'items.seller': sellerId } },
-      { $unwind: '$items' },
-      { $match: { 'items.seller': sellerId } },
-      {
-        $group: {
-          _id: null,
-          totalOrders: { $sum: 1 },
-          totalRevenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
-          pendingOrders: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
-          completedOrders: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } }
-        }
-      }
-    ]);
-
-    // Get recent orders
-    const recentOrders = await Order.find({ 'items.seller': sellerId })
-      .populate('buyer', 'name email')
-      .populate('items.product', 'name images')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    // Location-based analytics
-    let locationAnalytics = {
-      nearbyCustomers: 0,
-      nearbyCompetitors: 0,
-      deliveryRadius: '10 km',
-      topCustomerAreas: []
-    };
-
-    if (sellerLocation && sellerLocation.length === 2) {
-      const [longitude, latitude] = sellerLocation;
-
-      // Find nearby customers (buyers who have ordered from any seller within 25km)
-      const nearbyCustomers = await User.find({
-        type: 'buyer',
-        'address.coordinates.coordinates': {
-          $geoWithin: {
-            $centerSphere: [[longitude, latitude], 25 / 6378.1] // 25km radius in radians
-          }
-        }
-      }).countDocuments();
-
-      // Find nearby competitors (other sellers within 10km)
-      const nearbyCompetitors = await User.find({
-        type: 'seller',
-        _id: { $ne: sellerId },
-        'address.coordinates.coordinates': {
-          $geoWithin: {
-            $centerSphere: [[longitude, latitude], 10 / 6378.1] // 10km radius in radians
-          }
-        }
-      }).countDocuments();
-
-      // Get top customer areas based on order delivery addresses
-      const customerAreas = await Order.aggregate([
-        { $match: { 'items.seller': sellerId } },
-        { $unwind: '$items' },
-        { $match: { 'items.seller': sellerId } },
-        {
-          $group: {
-            _id: '$shippingAddress.city',
-            orderCount: { $sum: 1 },
-            revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } }
-          }
-        },
-        { $sort: { orderCount: -1 } },
-        { $limit: 5 }
-      ]);
-
-      locationAnalytics = {
-        nearbyCustomers,
-        nearbyCompetitors,
-        deliveryRadius: '10 km',
-        topCustomerAreas: customerAreas.map(area => ({
-          city: area._id || 'Unknown',
-          orders: area.orderCount,
-          revenue: area.revenue
-        }))
-      };
-    }
-
-    const stats = {
-      products: productStats[0] || { totalProducts: 0, activeProducts: 0, totalViews: 0, totalSales: 0 },
-      orders: orderStats[0] || { totalOrders: 0, totalRevenue: 0, pendingOrders: 0, completedOrders: 0 },
-      recentOrders,
-      locationAnalytics
-    };
-
-    res.json({
-      success: true,
-      data: stats
-    });
-  } catch (error) {
-    console.error('Get seller stats error:', error);
-    res.status(500).json({ message: 'Server error fetching seller stats' });
-  }
-});
-
-// @desc    Get top sellers
-// @route   GET /api/users/sellers/top
-// @access  Public
-router.get('/sellers/top', async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-    
-    const topSellers = await User.find({ type: 'seller', isActive: true })
-      .select('name businessName profilePicture rating location')
-      .sort({ 'rating.average': -1, 'rating.count': -1 })
-      .limit(limit);
-
-    res.json({
-      success: true,
-      data: topSellers
-    });
-  } catch (error) {
-    console.error('Get top sellers error:', error);
-    res.status(500).json({ message: 'Server error fetching top sellers' });
-  }
-});
-
-// @desc    Get public seller profile
-// @route   GET /api/users/sellers/:id/profile
-// @access  Public
-router.get('/sellers/:id/profile', async (req, res) => {
-  try {
-    const seller = await User.findById(req.params.id).select('-password -email');
-    
-    if (!seller) {
-      return res.status(404).json({ message: 'Seller not found' });
-    }
-
-    // Only allow viewing seller profiles
-    if (seller.type !== 'seller') {
-      return res.status(404).json({ message: 'Seller not found' });
-    }
-
-    // Get seller's product count and stats
-    const productCount = await Product.countDocuments({ seller: seller._id, status: 'active' });
-    const totalOrders = await Order.countDocuments({ 'items.seller': seller._id });
-    
-    // Calculate total sales
-    const salesData = await Order.aggregate([
-      { $match: { 'items.seller': seller._id, status: 'delivered' } },
-      { $unwind: '$items' },
-      { $match: { 'items.seller': seller._id } },
-      { $group: { _id: null, totalSales: { $sum: '$items.price' } } }
-    ]);
-
-    const totalSales = salesData.length > 0 ? salesData[0].totalSales : 0;
-
-    // Add computed fields
-    const sellerProfile = {
-      ...seller.toObject(),
-      stats: {
-        productCount,
-        totalOrders,
-        totalSales,
-        responseRate: seller.stats?.responseRate || 95 // Default response rate
-      }
-    };
-
-    res.json({
-      success: true,
-      data: sellerProfile
-    });
-  } catch (error) {
-    console.error('Get seller profile error:', error);
-    res.status(500).json({ message: 'Server error fetching seller profile' });
   }
 });
 

@@ -3,6 +3,55 @@ import Store from '../models/Store.js';
 import { protect, restrictTo } from '../middleware/auth.js';
 const router = express.Router();
 
+// Get all public stores with locations (for marketplace map)
+router.get('/public', async (req, res) => {
+  try {
+    const stores = await Store.find({ 
+      $or: [
+        { isPublished: true },
+        { 'settings.isPublished': true }
+      ]
+    })
+    .populate('seller', 'name businessName address')
+    .select('name slug description seller settings.contact isPublished')
+    .lean();
+
+    console.log(`Found ${stores.length} published stores`);
+
+    // Filter stores that have seller location data
+    const storesWithLocations = stores
+      .filter(store => 
+        store.seller?.address?.coordinates?.coordinates && 
+        Array.isArray(store.seller.address.coordinates.coordinates) &&
+        store.seller.address.coordinates.coordinates.length === 2
+      )
+      .map(store => ({
+        _id: store._id,
+        name: store.name,
+        slug: store.slug,
+        description: store.description,
+        businessName: store.seller.businessName || store.seller.name,
+        location: {
+          coordinates: store.seller.address.coordinates.coordinates,
+          address: `${store.seller.address.city || ''}, ${store.seller.address.state || ''}`.trim().replace(/^,\s*/, '')
+        },
+        contact: store.settings?.contact || {}
+      }));
+
+    res.json({
+      success: true,
+      data: storesWithLocations,
+      count: storesWithLocations.length
+    });
+  } catch (error) {
+    console.error('Get public stores error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch stores' 
+    });
+  }
+});
+
 // Get all stores for the authenticated seller
 router.get('/', protect, restrictTo('seller', 'admin'), async (req, res) => {
   try {
@@ -507,7 +556,11 @@ router.post('/:id/validate-delivery', async (req, res) => {
 
     for (const zone of activeZones) {
       if (zone.deliveryType === 'state-based' && state) {
-        if (zone.states.includes(state)) {
+        // Case-insensitive state matching
+        const stateMatches = zone.states.some(zoneState => 
+          zoneState.toLowerCase() === state.toLowerCase()
+        );
+        if (stateMatches) {
           availableZones.push(zone);
         }
       } else if (zone.deliveryType === 'radius-based' && location) {

@@ -170,6 +170,46 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
+// @desc    Get seller's orders
+// @route   GET /api/orders/seller/dashboard
+// @access  Private (Sellers only)
+router.get('/seller/dashboard', protect, restrictTo('seller', 'admin'), async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const filter = { 'items.seller': req.user.id };
+    
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    const orders = await Order.find(filter)
+      .populate('buyer', 'name email phone')
+      .populate('items.product', 'name images price')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await Order.countDocuments(filter);
+
+    res.json({
+      success: true,
+      data: orders,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get seller orders error:', error);
+    res.status(500).json({ message: 'Server error fetching seller orders' });
+  }
+});
+
 // @desc    Get single order
 // @route   GET /api/orders/:id
 // @access  Private
@@ -305,46 +345,6 @@ router.put('/:id/cancel', protect, async (req, res) => {
   } catch (error) {
     console.error('Cancel order error:', error);
     res.status(500).json({ message: 'Server error cancelling order' });
-  }
-});
-
-// @desc    Get seller's orders
-// @route   GET /api/orders/seller/dashboard
-// @access  Private (Sellers only)
-router.get('/seller/dashboard', protect, restrictTo('seller', 'admin'), async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const filter = { 'items.seller': req.user.id };
-    
-    if (req.query.status) {
-      filter.status = req.query.status;
-    }
-
-    const orders = await Order.find(filter)
-      .populate('buyer', 'name email phone')
-      .populate('items.product', 'name images price')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const total = await Order.countDocuments(filter);
-
-    res.json({
-      success: true,
-      data: orders,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Get seller orders error:', error);
-    res.status(500).json({ message: 'Server error fetching seller orders' });
   }
 });
 
