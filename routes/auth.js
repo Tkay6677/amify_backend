@@ -1,8 +1,38 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
+import multer from 'multer';
+import { createClient } from '@supabase/supabase-js';
 import User from '../models/User.js';
 import { protect } from '../middleware/auth.js';
+
+// Function to get Supabase client (lazy initialization)
+const getSupabaseClient = () => {
+  if (!process.env.VITE_SUPABASE_URL || !process.env.VITE_SUPABASE_ANON_KEY) {
+    console.warn('Supabase environment variables not found, image uploads will use base64 fallback');
+    return null;
+  }
+  return createClient(
+    process.env.VITE_SUPABASE_URL,
+    process.env.VITE_SUPABASE_ANON_KEY
+  );
+};
+
+// Configure multer for memory storage
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  },
+});
 
 const router = express.Router();
 
@@ -48,6 +78,28 @@ router.post('/register', [
       phone
     };
 
+    // Handle location coordinates for both buyers and sellers
+    const { latitude, longitude, address } = req.body;
+    if (latitude && longitude) {
+      // Use provided coordinates
+      userData.address = {
+        country: 'Nigeria',
+        coordinates: {
+          type: 'Point',
+          coordinates: [longitude, latitude] // GeoJSON format: [lng, lat]
+        }
+      };
+      if (address) {
+        userData.addressText = address;
+      }
+    } else {
+      // For users without coordinates, set a minimal address structure
+      // without the coordinates field to avoid GeoJSON validation errors
+      userData.address = {
+        country: 'Nigeria'
+      };
+    }
+
     // Add seller-specific fields
     if (type === 'seller') {
       if (!businessName) {
@@ -56,29 +108,11 @@ router.post('/register', [
       userData.businessName = businessName;
       userData.businessDescription = businessDescription;
       
-      // Handle location coordinates
-      const { latitude, longitude, address } = req.body;
-      if (latitude && longitude) {
-        // Use provided coordinates
-        userData.address = {
-          country: 'Nigeria',
-          coordinates: {
-            type: 'Point',
-            coordinates: [longitude, latitude] // GeoJSON format: [lng, lat]
-          }
-        };
-        if (address) {
-          userData.addressText = address;
-        }
-      } else {
-        // Add default address structure for sellers to avoid GeoJSON errors
-        // This will be updated later when the seller provides their actual location
-        userData.address = {
-          country: 'Nigeria',
-          coordinates: {
-            type: 'Point',
-            coordinates: [7.0, 9.0] // Default coordinates for Nigeria (longitude, latitude)
-          }
+      // Sellers must have coordinates, so if not provided, use default Nigeria coordinates
+      if (!latitude || !longitude) {
+        userData.address.coordinates = {
+          type: 'Point',
+          coordinates: [7.0, 9.0] // Default coordinates for Nigeria (longitude, latitude)
         };
       }
     }
@@ -191,10 +225,20 @@ router.get('/profile', protect, async (req, res) => {
 // @route   PUT /api/auth/profile
 // @access  Private
 router.put('/profile', protect, [
-  body('name').optional().trim().isLength({ min: 2, max: 50 }),
-  body('phone').optional().matches(/^\+?[1-9]\d{1,14}$/),
-  body('businessName').optional().trim().isLength({ min: 2, max: 100 }),
-  body('businessDescription').optional().trim().isLength({ max: 500 })
+  body('name').optional().trim().isLength({ min: 2, max: 50 }).withMessage('Name must be between 2 and 50 characters'),
+  body('phone').optional().custom((value) => {
+    if (!value || value.trim() === '') return true; // Allow empty phone
+    return /^\+?[0-9\s\-\(\)]{7,20}$/.test(value);
+  }).withMessage('Please enter a valid phone number'),
+  body('businessName').optional().custom((value) => {
+    if (!value || value.trim() === '') return true; // Allow empty business name
+    return value.trim().length >= 2 && value.trim().length <= 100;
+  }).withMessage('Business name must be between 2 and 100 characters'),
+  body('businessDescription').optional().custom((value) => {
+    if (!value || value.trim() === '') return true; // Allow empty description
+    return value.trim().length <= 500;
+  }).withMessage('Business description must not exceed 500 characters'),
+  body('address').optional().isLength({ max: 1000 }).withMessage('Address must not exceed 1000 characters')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -277,10 +321,80 @@ router.put('/change-password', protect, [
 // @route   POST /api/auth/logout
 // @access  Private
 router.post('/logout', protect, (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     message: 'Logged out successfully'
   });
+});
+
+// @desc    Upload avatar
+// @route   POST /api/auth/upload-avatar
+// @access  Private
+router.post('/upload-avatar', protect, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    let avatarUrl;
+
+    try {
+      // Generate unique filename
+      const fileExt = req.file.originalname.split('.').pop();
+      const fileName = `${req.user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      // Get Supabase client
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error('Supabase not configured');
+      }
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('amify-storage')
+        .upload(filePath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: true
+        });
+
+      if (error) {
+        console.error('Supabase upload error:', error);
+        throw error;
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('amify-storage')
+        .getPublicUrl(filePath);
+
+      avatarUrl = urlData.publicUrl;
+
+    } catch (supabaseError) {
+      console.warn('Supabase upload failed, falling back to base64:', supabaseError.message);
+      // Fallback to base64 if Supabase upload fails
+      avatarUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    }
+
+    // Update user's avatar in database
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { avatar: avatarUrl },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      avatarUrl: avatarUrl,
+      user: user
+    });
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ 
+      message: 'Failed to upload avatar',
+      error: error.message 
+    });
+  }
 });
 
 export default router;
